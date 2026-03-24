@@ -20,9 +20,10 @@ return [
     'allowed_methods' => ['*'],
 
     'allowed_origins' => [
-        'http://localhost:5173', 
+        'http://localhost:5173',
         'http://127.0.0.1:5173',
-        'https://wikigameback.tahri.cloud'
+        'https://wikigameback.tahri.cloud',
+        'https://wikigame.tahri.cloud'
     ],
 
     'allowed_origins_patterns' => [],
