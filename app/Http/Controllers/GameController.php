@@ -5,51 +5,16 @@ namespace App\Http\Controllers;
 use App\Models\Player;
 use App\Models\Round;
 use App\Models\Score;
+use App\Services\AiRoundService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 
 class GameController extends Controller
 {
-    private const GENRES_CONFIG = [
-        'History' => [
-            'ar' => 'تصنيف:تاريخ',
-            'en' => 'Category:History',
-            'fr' => 'Catégorie:Histoire'
-        ],
-        'Geography' => [
-            'ar' => 'تصنيف:جغرافيا',
-            'en' => 'Category:Geography',
-            'fr' => 'Catégorie:Géographie'
-        ],
-        'Movies' => [
-            'ar' => 'تصنيف:أفلام',
-            'en' => 'Category:Films',
-            'fr' => 'Catégorie:Cinéma'
-        ],
-        'Music' => [
-            'ar' => 'تصنيف:موسيقى',
-            'en' => 'Category:Music',
-            'fr' => 'Catégorie:Musique'
-        ],
-        'Sports' => [
-            'ar' => 'تصنيف:رياضة',
-            'en' => 'Category:Sports',
-            'fr' => 'Catégorie:Sport'
-        ],
-        'Science' => [
-            'ar' => 'تصنيف:علوم',
-            'en' => 'Category:Science',
-            'fr' => 'Catégorie:Science'
-        ],
-        'People' => [
-            'ar' => 'تصنيف:أعلام',
-            'en' => 'Category:Living people',
-            'fr' => 'Catégorie:Personnalité'
-        ]
-    ];
 
-    private function fetchRandomWikiPage($lang = 'ar')
+    private function fetchRandomWikiPage()
     {
+        $lang = 'en';
         $response = Http::withoutVerifying()
             ->withHeaders(['User-Agent' => 'ArabicWikiGame/1.0'])
             ->get("https://{$lang}.wikipedia.org/w/api.php", [
@@ -62,36 +27,11 @@ class GameController extends Controller
         return $response->json()['query']['random'][0]['title'];
     }
 
-    private function fetchRandomWikiPageFromCategory($genre, $lang = 'ar')
+
+
+    public function currentRound(Request $request, AiRoundService $aiRoundService)
     {
-        $category = self::GENRES_CONFIG[$genre][$lang] ?? self::GENRES_CONFIG[$genre]['en'];
-        
-        $response = Http::withoutVerifying()
-            ->withHeaders(['User-Agent' => 'ArabicWikiGame/1.0'])
-            ->get("https://{$lang}.wikipedia.org/w/api.php", [
-            'action' => 'query',
-            'list' => 'categorymembers',
-            'cmtitle' => $category,
-            'cmtype' => 'page',
-            'cmlimit' => 500,
-            'format' => 'json'
-        ]);
-
-        $members = $response->json()['query']['categorymembers'] ?? [];
-        
-        if (empty($members)) {
-            return $this->fetchRandomWikiPage($lang);
-        }
-
-        $randomMember = $members[array_rand($members)];
-        return $randomMember['title'];
-    }
-
-    public function currentRound(Request $request)
-    {
-        $lang = $request->query('lang', 'ar');
-        if (!in_array($lang, ['ar', 'en', 'fr'])) $lang = 'ar';
-
+        $lang = 'en';
         $duration = 165; // 15s prep + 150s play
         $baseTimeUnix = 1704067200; // 2024-01-01 00:00:00 UTC
         $nowUnix = now()->timestamp;
@@ -108,27 +48,41 @@ class GameController extends Controller
 
         // If no round exists for this global clock slot, create it
         if (!$round) {
-            $genreKeys = array_keys(self::GENRES_CONFIG);
-            $startGenre = $genreKeys[array_rand($genreKeys)];
-            $targetGenre = $genreKeys[array_rand($genreKeys)];
+            // Try AI selection first
+            $aiResult = $aiRoundService->generateRound();
 
-            $startPage = $this->fetchRandomWikiPageFromCategory($startGenre, $lang);
-            $targetPage = $this->fetchRandomWikiPageFromCategory($targetGenre, $lang);
+            if (!empty($aiResult)) {
+                $round = Round::create([
+                    'language' => $lang,
+                    'start_genre' => null,
+                    'target_genre' => null,
+                    'difficulty' => $aiResult['difficulty'],
+                    'start_page' => $aiResult['start_page'],
+                    'target_page' => $aiResult['target_page'],
+                    'start_time' => $slotStart,
+                    'end_time' => $slotEnd,
+                ]);
+            } else {
+                // Fallback to random if AI fails
+                \Illuminate\Support\Facades\Log::info("AI Round generation failed, falling back to random Wikipedia pages.");
+                $startPage = $this->fetchRandomWikiPage($lang);
+                $targetPage = $this->fetchRandomWikiPage($lang);
 
-            // Ensure they are not the same
-            while ($startPage === $targetPage) {
-                $targetPage = $this->fetchRandomWikiPageFromCategory($targetGenre, $lang);
+                while ($startPage === $targetPage) {
+                    $targetPage = $this->fetchRandomWikiPage($lang);
+                }
+
+                $round = Round::create([
+                    'language' => $lang,
+                    'start_genre' => null,
+                    'target_genre' => null,
+                    'difficulty' => 'standard',
+                    'start_page' => $startPage,
+                    'target_page' => $targetPage,
+                    'start_time' => $slotStart,
+                    'end_time' => $slotEnd,
+                ]);
             }
-
-            $round = Round::create([
-                'language' => $lang,
-                'start_genre' => $startGenre,
-                'target_genre' => $targetGenre,
-                'start_page' => $startPage,
-                'target_page' => $targetPage,
-                'start_time' => $slotStart,
-                'end_time' => $slotEnd,
-            ]);
         }
 
         return response()->json([
@@ -201,9 +155,7 @@ class GameController extends Controller
 
     public function leaderboard(Request $request)
     {
-        $lang = $request->query('lang', 'ar');
-        if (!in_array($lang, ['ar', 'en', 'fr'])) $lang = 'ar';
-
+        $lang = 'en';
         $duration = 165;
         $baseTimeUnix = 1704067200;
         $nowUnix = now()->timestamp;
@@ -231,8 +183,6 @@ class GameController extends Controller
 
         return response()->json([
             'round_id' => $round->id,
-            'start_genre' => $round->start_genre,
-            'target_genre' => $round->target_genre,
             'leaderboard' => $scores,
             'is_active' => now()->lessThanOrEqualTo($round->end_time),
             'time_remaining' => max(0, (int) now()->diffInSeconds($round->end_time, false))

@@ -13,6 +13,7 @@ class Round extends Model
         'language',
         'start_genre',
         'target_genre',
+        'difficulty',
         'start_page',
         'target_page',
         'start_time',
