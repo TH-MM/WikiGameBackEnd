@@ -11,6 +11,8 @@ class Round extends Model
 
     protected $fillable = [
         'language',
+        'start_genre',
+        'target_genre',
         'start_page',
         'target_page',
         'start_time',

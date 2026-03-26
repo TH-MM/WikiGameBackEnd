@@ -10,6 +10,44 @@ use Illuminate\Support\Facades\Http;
 
 class GameController extends Controller
 {
+    private const GENRES_CONFIG = [
+        'History' => [
+            'ar' => 'تصنيف:تاريخ',
+            'en' => 'Category:History',
+            'fr' => 'Catégorie:Histoire'
+        ],
+        'Geography' => [
+            'ar' => 'تصنيف:جغرافيا',
+            'en' => 'Category:Geography',
+            'fr' => 'Catégorie:Géographie'
+        ],
+        'Movies' => [
+            'ar' => 'تصنيف:أفلام',
+            'en' => 'Category:Films',
+            'fr' => 'Catégorie:Cinéma'
+        ],
+        'Music' => [
+            'ar' => 'تصنيف:موسيقى',
+            'en' => 'Category:Music',
+            'fr' => 'Catégorie:Musique'
+        ],
+        'Sports' => [
+            'ar' => 'تصنيف:رياضة',
+            'en' => 'Category:Sports',
+            'fr' => 'Catégorie:Sport'
+        ],
+        'Science' => [
+            'ar' => 'تصنيف:علوم',
+            'en' => 'Category:Science',
+            'fr' => 'Catégorie:Science'
+        ],
+        'People' => [
+            'ar' => 'تصنيف:أعلام',
+            'en' => 'Category:Living people',
+            'fr' => 'Catégorie:Personnalité'
+        ]
+    ];
+
     private function fetchRandomWikiPage($lang = 'ar')
     {
         $response = Http::withoutVerifying()
@@ -22,6 +60,31 @@ class GameController extends Controller
             'format' => 'json'
         ]);
         return $response->json()['query']['random'][0]['title'];
+    }
+
+    private function fetchRandomWikiPageFromCategory($genre, $lang = 'ar')
+    {
+        $category = self::GENRES_CONFIG[$genre][$lang] ?? self::GENRES_CONFIG[$genre]['en'];
+        
+        $response = Http::withoutVerifying()
+            ->withHeaders(['User-Agent' => 'ArabicWikiGame/1.0'])
+            ->get("https://{$lang}.wikipedia.org/w/api.php", [
+            'action' => 'query',
+            'list' => 'categorymembers',
+            'cmtitle' => $category,
+            'cmtype' => 'page',
+            'cmlimit' => 500,
+            'format' => 'json'
+        ]);
+
+        $members = $response->json()['query']['categorymembers'] ?? [];
+        
+        if (empty($members)) {
+            return $this->fetchRandomWikiPage($lang);
+        }
+
+        $randomMember = $members[array_rand($members)];
+        return $randomMember['title'];
     }
 
     public function currentRound(Request $request)
@@ -45,16 +108,22 @@ class GameController extends Controller
 
         // If no round exists for this global clock slot, create it
         if (!$round) {
-            $startPage = $this->fetchRandomWikiPage($lang);
-            $targetPage = $this->fetchRandomWikiPage($lang);
+            $genreKeys = array_keys(self::GENRES_CONFIG);
+            $startGenre = $genreKeys[array_rand($genreKeys)];
+            $targetGenre = $genreKeys[array_rand($genreKeys)];
+
+            $startPage = $this->fetchRandomWikiPageFromCategory($startGenre, $lang);
+            $targetPage = $this->fetchRandomWikiPageFromCategory($targetGenre, $lang);
 
             // Ensure they are not the same
             while ($startPage === $targetPage) {
-                $targetPage = $this->fetchRandomWikiPage($lang);
+                $targetPage = $this->fetchRandomWikiPageFromCategory($targetGenre, $lang);
             }
 
             $round = Round::create([
                 'language' => $lang,
+                'start_genre' => $startGenre,
+                'target_genre' => $targetGenre,
                 'start_page' => $startPage,
                 'target_page' => $targetPage,
                 'start_time' => $slotStart,
@@ -162,6 +231,8 @@ class GameController extends Controller
 
         return response()->json([
             'round_id' => $round->id,
+            'start_genre' => $round->start_genre,
+            'target_genre' => $round->target_genre,
             'leaderboard' => $scores,
             'is_active' => now()->lessThanOrEqualTo($round->end_time),
             'time_remaining' => max(0, (int) now()->diffInSeconds($round->end_time, false))
