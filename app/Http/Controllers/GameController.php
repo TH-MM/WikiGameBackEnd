@@ -175,11 +175,11 @@ class GameController extends Controller
         $scores = Score::with('player')
             ->where('round_id', $round->id)
             ->get()
-            ->sortBy([
-                fn ($a, $b) => $b->finished <=> $a->finished, // Finished first
-                fn ($a, $b) => $a->time_taken <=> $b->time_taken, // Faster time
-                fn ($a, $b) => $a->clicks <=> $b->clicks, // Fewer clicks
-            ])->values();
+            ->sortByDesc('score')
+            ->sortByDesc('finished')
+            ->sortBy('time_taken')
+            ->sortBy('clicks')
+            ->values();
 
         return response()->json([
             'round_id' => $round->id,

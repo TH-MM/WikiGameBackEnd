@@ -10,12 +10,17 @@ class LlamaService
     private ?string $apiKey;
     private string $baseUrl;
     private string $model;
+    private string $provider;
 
     public function __construct()
     {
-        $this->apiKey = config('services.sambanova.key');
-        $this->baseUrl = config('services.sambanova.url', 'https://api.sambanova.ai/v1/chat/completions');
-        $this->model = config('services.sambanova.model', 'Meta-Llama-3.1-70B-Instruct');
+        $this->provider = env('AI_PROVIDER', 'groq'); // Default to groq now
+        
+        $config = config("services.{$this->provider}");
+        
+        $this->apiKey = $config['key'] ?? null;
+        $this->baseUrl = $config['url'] ?? '';
+        $this->model = $config['model'] ?? '';
     }
 
     /**
@@ -53,9 +58,13 @@ class LlamaService
                 return $response->json()['choices'][0]['message']['content'] ?? null;
             }
 
-            Log::error("SambaNova API Error (Model: {$this->model}): " . $response->body());
+            if ($response->status() === 429) {
+                Log::error("{$this->provider} API Rate Limit (429) - Fallback triggered.");
+            } else {
+                Log::error("{$this->provider} API Error (Model: {$this->model}): " . $response->body());
+            }
         } catch (\Exception $e) {
-            Log::error("SambaNova API Exception: " . $e->getMessage());
+            Log::error("{$this->provider} API Exception: " . $e->getMessage());
         }
 
         return null;
