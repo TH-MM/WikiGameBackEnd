@@ -7,8 +7,8 @@ use Illuminate\Support\Facades\Http;
 
 try {
     $response = Http::withoutVerifying()
-        ->withHeaders(['User-Agent' => 'ArabicWikiGame/1.0'])
-        ->get('https://ar.wikipedia.org/w/api.php', [
+        ->withHeaders(['User-Agent' => 'WikiGame/1.0'])
+        ->get('https://en.wikipedia.org/w/api.php', [
             'action' => 'query',
             'list' => 'random',
             'rnnamespace' => 0,

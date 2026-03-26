@@ -16,7 +16,7 @@ class GameController extends Controller
     {
         $lang = 'en';
         $response = Http::withoutVerifying()
-            ->withHeaders(['User-Agent' => 'ArabicWikiGame/1.0'])
+            ->withHeaders(['User-Agent' => 'WikiGame/1.0'])
             ->get("https://{$lang}.wikipedia.org/w/api.php", [
             'action' => 'query',
             'list' => 'random',
