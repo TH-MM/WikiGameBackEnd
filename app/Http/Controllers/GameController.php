@@ -188,4 +188,42 @@ class GameController extends Controller
             'time_remaining' => max(0, (int) now()->diffInSeconds($round->end_time, false))
         ]);
     }
+
+    public function leaderboardStats(Request $request)
+    {
+        $period = $request->get('period', 'all'); // day, week, all
+        
+        $query = Score::where('finished', true)
+            ->with('player')
+            ->select('player_id')
+            ->selectRaw('SUM(score) as total_score')
+            ->selectRaw('COUNT(*) as rounds_played')
+            ->selectRaw('SUM(clicks) as total_clicks')
+            ->selectRaw('SUM(time_taken) as total_time')
+            ->groupBy('player_id')
+            ->orderByDesc('total_score');
+
+        if ($period === 'day') {
+            $query->where('created_at', '>=', now()->subDay());
+        } elseif ($period === 'week') {
+            $query->where('created_at', '>=', now()->subWeek());
+        }
+
+        $leaderboard = $query->take(50)->get()->map(function($item) {
+            return [
+                'player_id' => $item->player_id,
+                'player' => $item->player,
+                'score' => $item->total_score,
+                'rounds_played' => $item->rounds_played,
+                'clicks' => $item->total_clicks,
+                'time_taken' => $item->total_time,
+                'finished' => true
+            ];
+        });
+
+        return response()->json([
+            'period' => $period,
+            'leaderboard' => $leaderboard
+        ]);
+    }
 }

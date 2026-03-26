@@ -39,4 +39,10 @@ return [
         'key' => env('GEMINI_API_KEY'),
     ],
 
+    'sambanova' => [
+        'key' => env('SAMBANOVA_API_KEY'),
+        'url' => env('SAMBANOVA_API_URL', 'https://api.sambanova.ai/v1/chat/completions'),
+        'model' => env('SAMBANOVA_MODEL', 'Meta-Llama-3.3-70B-Instruct'),
+    ],
+
 ];

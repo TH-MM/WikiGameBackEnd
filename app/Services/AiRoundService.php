@@ -7,24 +7,23 @@ use Illuminate\Support\Facades\Log;
 
 class AiRoundService
 {
-    private ?string $apiKey;
-    private string $baseUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent";
+    private LlamaService $llamaService;
 
-    public function __construct()
+    public function __construct(LlamaService $llamaService)
     {
-        $this->apiKey = config('services.gemini.key');
+        $this->llamaService = $llamaService;
     }
 
     public function generateRound(): array
     {
-        if (empty($this->apiKey)) {
-            Log::warning("Gemini API key missing. AI selection disabled.");
-            return [];
-        }
-
-        $themes = ['History', 'Science', 'Nature', 'Pop Culture', 'Geography', 'Sports', 'Movies', 'Music', 'Technology', 'Business', 'Politics', 'Art'];
+        $themes = ['History', 'Science', 'Nature', 'Pop Culture', 'Geography', 'Sports', 'Movies', 'Music', 'Technology', 'Business', 'Politics', 'Art', 'Philosophy', 'Literature', 'Environment', 'Food & Drink'];
         $startTheme = $themes[random_int(0, count($themes) - 1)];
         $targetTheme = $themes[random_int(0, count($themes) - 1)];
+        
+        // Ensure themes are different
+        while ($startTheme === $targetTheme) {
+            $targetTheme = $themes[random_int(0, count($themes) - 1)];
+        }
 
         $prompt = "You are an expert designer of the Wikipedia Game. Your goal is to create MEDIUM or HARD level rounds where the articles are from COMPLETELY UNRELATED domains.
 
@@ -32,10 +31,11 @@ Language: English
 
 STRICT RULES:
 1. Select two VERY FAMOUS articles (start_page and target_page) from DIFFERENT categories.
-2. The connection should NOT be obvious. A player should need 3–6 clicks to connect them.
-3. The start_page and target_page must NOT be directly linked.
-4. The path should rely on logical but non-trivial relationships across different fields.
-5. Avoid obscure, technical, or niche topics. Both topics must be widely known.
+2. The start_page should be related to the theme: '{$startTheme}'.
+3. The target_page should be related to the theme: '{$targetTheme}'.
+4. The connection should NOT be obvious. A player should need 3–6 clicks to connect them.
+5. The start_page and target_page must NOT be directly linked.
+6. Avoid obscure, technical, or niche topics. Both topics must be widely known.
 
 CHALLENGING CROSS-GENRE EXAMPLES:
 - 'Electric power' → 'BBC News'
@@ -58,23 +58,9 @@ IMPORTANT:
 - Ensure titles match EXACT Wikipedia page titles.";
 
         try {
-            $response = Http::withoutVerifying()
-                ->post("{$this->baseUrl}?key={$this->apiKey}", [
-                    'contents' => [
-                        [
-                            'parts' => [
-                                ['text' => $prompt]
-                            ]
-                        ]
-                    ],
-                    'generationConfig' => [
-                        'temperature' => 1.5,
-                        'topP' => 0.95,
-                    ]
-                ]);
+            $text = $this->llamaService->generate($prompt);
 
-            if ($response->successful()) {
-                $text = $response->json()['candidates'][0]['content']['parts'][0]['text'] ?? '';
+            if ($text) {
                 $cleanJson = preg_replace('/^```json\s*|```\s*$/', '', trim($text));
                 $result = json_decode($cleanJson, true);
 
@@ -87,12 +73,12 @@ IMPORTANT:
                 }
             }
 
-            Log::error("Gemini API Error or Invalid JSON: " . $response->body());
+            Log::error("Llama API failed to return valid JSON: " . ($text ?? 'Null response'));
         } catch (\Exception $e) {
-            Log::error("Gemini API Exception: " . $e->getMessage());
+            Log::error("AiRoundService Exception during Llama generation: " . $e->getMessage());
         }
 
-        // DYNAMIC FALLBACK pool for when Gemini API fails
+        // DYNAMIC FALLBACK pool for when AI fails
         $fallbacks = [
             ['start' => "Electric power", 'target' => "BBC News", 'diff' => "medium"],
             ['start' => "Blog", 'target' => "Transylvania", 'diff' => "medium"],
